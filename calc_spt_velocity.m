@@ -52,9 +52,9 @@ d1 = dist(it1);
 d2 = dist(it2);
 
 %simple velocity calculation using endpoints
-v_endpoints = (d2-d1)/(t2-t1);
-display(['v_endpoints = ' num2str(v_endpoints,'%0.4f')])
-plot([t1 t2],[d1 d2],'b:','tag','vel','linew',2)
+% v_endpoints = (d2-d1)/(t2-t1);
+% display(['v_endpoints = ' num2str(v_endpoints,'%0.4f')])
+% plot([t1 t2],[d1 d2],'b:','tag','vel','linew',2)
 
 %fit a line to the interval to get the velocity
 x = time(it1:it2);
@@ -63,7 +63,7 @@ y = dist(it1:it2);
 f = fit(x',y','poly1');
 v_fit = f.p1;
 display(['v_fit = ' num2str(v_fit,'%0.2f')])
-plot(ud.axes.ax_dist, [t1 t2], f.p1*[t1 t2]+f.p2, 'k:', 'tag', 'vel', 'linew',2)
+plot(ud.axes.ax_dist, [t1 t2], f.p1*[t1 t2]+f.p2, 'k', 'tag', 'vel', 'linew',0.5)
 
 %keep text at top
 if v_fit < 0
@@ -71,7 +71,8 @@ if v_fit < 0
 else
     txty = d2 + 3;
 end
-text(ud.axes.ax_dist, t1, txty, {[num2str(v_endpoints,'%0.1f') ' nm/s'] [num2str(v_fit,'%0.1f') ' nm/s (fit)']}, 'tag', 'vel', 'color', 'b')
+% text(ud.axes.ax_dist, t1, txty, {[num2str(v_endpoints,'%0.1f') ' nm/s'] [num2str(v_fit,'%0.1f') ' nm/s (fit)']}, 'tag', 'vel', 'color', 'b')
+text(ud.axes.ax_dist, t1, txty, [num2str(v_fit,'%0.1f') ' nm/s (fit)'], 'tag', 'vel', 'color', 'b')
 
 %add fit data to list saved to figure
 

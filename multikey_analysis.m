@@ -8,6 +8,12 @@ ud = get(gcf,'UserData');
 if evnt.Character == 'c' % reset center of ring
     resetcenter;
     
+elseif evnt.Character == 'a' % run AutoStepFinder on trajectory
+    find_steps_spt;
+    
+elseif evnt.Character == 'b' % run AutoStepFinder on all trajectories (batch version)
+    find_steps_spt_batch;
+    
 elseif evnt.Character == 't' %add set of t points (for uvrd 2B fret analysis)
     pts = add_spt_t_points;
     

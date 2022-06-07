@@ -42,6 +42,10 @@ cla(ud.axes.ax_dist)
 
 for tt = 1:length(ud.phandles.p_polar)
     
+    if ~ud.cell.track{tt}.isplotted
+        continue
+    end
+    
     % original track trajectory in polar coordinates
     r1 = ud.cell.track{tt}.rho_new;
     th1 = ud.cell.track{tt}.theta_new;
@@ -64,7 +68,11 @@ for tt = 1:length(ud.phandles.p_polar)
     
     polarplot(ud.axes.ax_polar, th2, r2);
     
-    newdist = r2.*th2; % [nm] angular position
+    if ud.param.fixedRadius
+        newdist = th2 .* ud.cell.cell_radius_fit*ud.param.pixSz;
+    else
+        newdist = r2 .* th2; % [nm] angular position
+    end
     
     % patch up boundary conditions
     dxdt = (newdist(2:end)-newdist(1:end-1)) / ud.param.interval; % first derivative
@@ -73,16 +81,27 @@ for tt = 1:length(ud.phandles.p_polar)
     
     % when track reaches boundary [-pi pi], add or subtract 2*pi*r to keep track continuous
     for jj = 1:length(ind_plus)
-        newdist(ind_plus(jj)+1:end) = newdist(ind_plus(jj)+1:end) - 2*pi*r2(ind_plus(jj)+1:end);
+        if ud.param.fixedRadius
+            newdist(ind_plus(jj)+1:end) = newdist(ind_plus(jj)+1:end) - 2*pi*ud.cell.cell_radius_fit*ud.param.pixSz;
+        else
+            newdist(ind_plus(jj)+1:end) = newdist(ind_plus(jj)+1:end) - 2*pi*r2(ind_plus(jj)+1:end);
+        end
     end
     for jj = 1:length(ind_minus)
-        newdist(ind_minus(jj)+1:end) = newdist(ind_minus(jj)+1:end) + 2*pi*r2(ind_minus(jj)+1:end);
+        if ud.param.fixedRadius
+            newdist(ind_minus(jj)+1:end) = newdist(ind_minus(jj)+1:end) + 2*pi*ud.cell.cell_radius_fit*ud.param.pixSz;
+        else
+            newdist(ind_minus(jj)+1:end) = newdist(ind_minus(jj)+1:end) + 2*pi*r2(ind_minus(jj)+1:end);
+        end
     end
     
     ud.phandles.p_rho(tt) = plot(ud.axes.ax_rho, time, r2);
     ud.phandles.p_dist(tt) = plot(ud.axes.ax_dist, time, newdist);
     
+    maxrho(tt) = max(r2);
 end
+
+ud.axes.ax_rho.YLim = [0 max(maxrho)*1.1];
 
 polarplot(ud.axes.ax_polar, orith2, orir2, 'xb')
 

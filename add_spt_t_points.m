@@ -44,9 +44,11 @@ while ~isempty(x)
         
         yl_rho = get(ud.axes.ax_rho,'ylim');
         yl_dist = get(ud.axes.ax_dist,'ylim');
+        yl_int = get(ud.axes.ax_int,'ylim');
         for ii = 1:length(t)
             plot(ud.axes.ax_rho, t(ii)*[1 1], yl_rho, 'k:', 'linew', 2, 'tag', 'tpts')
             plot(ud.axes.ax_dist, t(ii)*[1 1], yl_dist, 'k:', 'linew', 2, 'tag', 'tpts')
+            plot(ud.axes.ax_int, t(ii)*[1 1], yl_int, 'k:', 'linew', 2, 'tag', 'tpts')
         end
         set(gcf,'Userdata',ud);
      end

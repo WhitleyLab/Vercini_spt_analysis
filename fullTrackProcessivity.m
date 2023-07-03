@@ -11,6 +11,10 @@ if nargin < 2
     spdcut = [0 Inf];
 end
 
+if ismember('Total_Length_nm_', T.Properties.VariableNames)
+    T = removevars(T, 'Total_Length_nm_'); % clear out the old column
+end
+
 % first, grab a track with all its segments (and global measurements)
 [~, inds] = unique(T.("Image_ROI_Name"));
 inds = sort(inds);

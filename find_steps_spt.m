@@ -59,7 +59,7 @@ vel = vel(wdw-1:end-(wdw-2));
 
 % write velocity coordinates to temporary txt file for AutoStepFinder to use
 fileid = fopen([ud.figsavename '.txt'], 'w');
-fprintf(fileid, '%d\r\n',vel);
+fprintf(fileid, '%d\r\n', vel);
 fclose(fileid);
 
 % run AutoStepFinder (without GUI)

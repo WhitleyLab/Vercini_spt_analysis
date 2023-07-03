@@ -6,19 +6,21 @@ if nargin == 0
     param.file = '1';
     param.analysisDate = datestr(now,'yymmdd');
     param.directory = ['\\campus\rdw\FMS CBCB\nsh167\Shared\data\Whitley-Kevin\220316_sh147_phmm_30c_vercini\' param.Date '_' param.file '\'];
-    Zim = imreadstack([param.directory param.Date '_' param.file '_MMStack_Default.ome.tif']);
-    im = imreadstack([param.directory param.Date '_' param.file '_MMStack_Default_561_denoise_reg.ome.tif']);
-    tracks = xlsread([param.directory param.Date '_' param.file '_tracks.csv']);
-    cells = xlsread([param.directory param.Date '_' param.file '_MMStack_Default_561_denoise_reg.ome.roi.zip.csv']);
+%     Zim = imreadstack([param.directory param.Date '_' param.file '_MMStack_Default.ome.tif']);
+    im = imreadstack([param.directory param.Date '_' param.file '_MMStack_Default_561_denoise.ome.tif']);
+    tracks = xlsread([param.directory param.Date '_' param.file '_tracks_diffusive_nogaps.csv']);
+    cells = xlsread([param.directory param.Date '_' param.file '_MMStack_Default_561_denoise.ome.roi.zip.csv']);
 
     param.pixSz = 65; % [nm/pix]
     param.interval = 1; % [s]
     param.psfFWHM = 250; % [nm]
     param.derivative_threshold = 1000 / param.interval;
     param.fixedRadius = 1; % use fixed radius (otherwise use instantaneous 'radius')
+    param.thunderstorm = 0; % used thunderSTORM for localizations and tracking (tracking csv file in um for regular TrackMate, nm for tSTORM+TrackMate)
     
-    param.diffusion_model = 'directional'; % otherwise directional
-    param.msd_fit_range = [0 30]; % range of time-steps to fit for MSD data
+    param.diffusion_model = 'brownian'; % brownian or directional
+    param.msd_fit = 'loglog'; % use loglog fit or linear fit?
+    param.msd_fit_range = [0 15]; % range of time-steps to fit for MSD data
 else
     if isempty(param.directory)
         path = uigetdir;
@@ -32,7 +34,7 @@ else
         param.pixSz = 65; % [nm/pix]
     end
     
-    Zim_file = uigetfile('*.ome.tif', 'FtsZ image file', [path '\']);
+%     Zim_file = uigetfile('*.ome.tif', 'FtsZ image file', [path '\']);
     im_file = uigetfile('*.ome.tif', 'Pbp2B stack', [path '\']);
     tracks_file = uigetfile('*.csv', 'Track file', [path '\']);
     septa_file = uigetfile('*.ome.roi.zip.csv', 'Septa file', [path '\']);
@@ -59,6 +61,12 @@ param.R2_threshold = 0.95; % threshold for R^2 (for fit of log(MSD) to log(t))
 % no filters
 param.distance_threshold = 0.00; % [um] threshold for end-to-end distance a track needs to go
 param.R2_threshold = -Inf; % threshold for R^2 (for fit of log(MSD) to log(t))
+
+% if (x,y) coordinates in track file were in nm, convert to um
+if param.thunderstorm
+    tracks(:,4:5) = tracks(:,4:5)./1000; % [um]
+    tracks(:,7) = tracks(:,8); % [frames] columns mixed up in this format
+end
 
 % sort rows (times sometimes are scrambled)
 tracks = sortrows(tracks,[2 7]);
@@ -111,10 +119,11 @@ for ii = 1:length(Cells)
     ud.cell.cellnum = ii;
     
     % start plot for this cell
-    ud.figsavename = [param.directory param.Date '_' param.file '_cell' num2str(ii)];
+    ud.figsavename = [param.directory param.Date '_' param.file '_cell' num2str(ii) '_diffuse'];
     fig_tracks = figure('Position',[850, 130, 770, 800], 'FileName', ud.figsavename);
 %     ud.axes.ax_im = subplot(3,4,1);
     ud.axes.ax_im = subplot(4,4,1);
+    set(ud.axes.ax_im,"YDir","reverse")
     hold on
     axis equal
     
@@ -160,17 +169,24 @@ for ii = 1:length(Cells)
     ud.cell.boxsize = [xdim ydim];
     
     % get individual ring bounded by the box at index ind_box
-%     subim(1:ydim+1,1:xdim+1,1:size(im,3)) = im(box_y1:box_y2, box_x1:box_x2, :); % need to flip x and y
-    subim(1:ydim+1,1:xdim+1,1) = Zim(box_y1:box_y2, box_x1:box_x2, 1);
+    subim(1:ydim+1,1:xdim+1,1:size(im,3)) = im(box_y1:box_y2, box_x1:box_x2, :); % need to flip x and y
+%     subim(1:ydim+1,1:xdim+1,1) = Zim(box_y1:box_y2, box_x1:box_x2, 1);
     
     % fit individual ring to model, get center position
     %ringIm = mean(subim,3);
-%     ringImMax = max(subim,[],3);
+    ringImMax = max(subim,[],3);
     fitRingArg = {'FixedPositionFit', true};
-    [fitParAvg, ~, im_bg_sub] = fitRing_public(subim, pix2um*1000, param.psfFWHM, fitRingArg{:});
+    try
+        [fitParAvg, ~, im_bg_sub] = fitRing_public(ringImMax, pix2um*1000, param.psfFWHM, fitRingArg{:});
+    catch
+        continue
+    end
+%     [fitParAvg, ~, im_bg_sub] = fitRing_public(subim, pix2um*1000, param.psfFWHM, fitRingArg{:});
     cent = fitParAvg(:,1:2); % [pix]
     radius = fitParAvg(:,3); % [pix]
-    imagesc(ud.axes.ax_im, im_bg_sub)
+    implot = imagesc(ud.axes.ax_im, im_bg_sub);
+    set(implot, 'XData', implot.XData-0.5) % make sure pixels actually start at (0,0)
+    set(implot, 'YData', implot.YData-0.5) % make sure pixels actually start at (0,0)
     plot(ud.axes.ax_im, cent(1), cent(2), 'xr')
     tv_theta = 0:0.01:2*pi;
     plot(ud.axes.ax_im, cent(1)-fitParAvg(:,3)*cos(tv_theta), cent(2)-fitParAvg(:,3)*sin(tv_theta),'r')
@@ -191,6 +207,7 @@ for ii = 1:length(Cells)
     mean_septa = mean(Cells{ii},1).*pix2um;
     for ss2 = 1:length(tracknums)
         median_track_pos = median(tracks(tracks(:,2)==tracknums(ss2),4:5));
+
         dr(ss2) = sqrt((median_track_pos(1)-mean_septa(1)).^2 + (median_track_pos(2)-mean_septa(2)).^2); % distance difference
     end
     
@@ -224,7 +241,7 @@ for ii = 1:length(Cells)
     % GO THROUGH EACH TRACK
 
     % go through each track for this cell
-    Tracks={}; maxrho=[]; ud.phandles.p_polar=[]; ud.phandles.p_rho=[]; ud.phandles.p_dist=[]; ud.phandles.p_msd=[]; ud.phandles.p_msd_fit=[]; ud.cell.track={};
+    Tracks={}; maxrho=[]; ud.phandles.p_polar=[]; ud.phandles.p_rho=[]; ud.phandles.p_dist=[]; ud.phandles.p_msd=[]; ud.phandles.p_msd_fit=[]; ud.cell.track={}; JD_all=[];
     for tt = 1:length(tracknum_paired)
         
         ud.cell.track{tt}.trackind = tt;
@@ -257,8 +274,10 @@ for ii = 1:length(Cells)
         % CONVERT TRACK DATA TO POLAR COORDINATES
         
         % subtract center position from the track
-        Tracks{tt}(:,20) = (cent(1)+box_x1)*pix2um - Tracks{tt}(:,4); % [um]
-        Tracks{tt}(:,21) = (cent(2)+box_y1)*pix2um - Tracks{tt}(:,5); % [um]
+        cellcent_fov_x = (cent(1)+box_x1-1)*pix2um; % [um] x position of center of cell relative to full FoV. included -1 (220613 kw)
+        cellcent_fov_y = (cent(2)+box_y1-1)*pix2um; % [um] y position of center of cell relative to full FoV. included -1 (220613 kw)
+        Tracks{tt}(:,20) = cellcent_fov_x - Tracks{tt}(:,4); % [um]
+        Tracks{tt}(:,21) = cellcent_fov_y - Tracks{tt}(:,5); % [um]
         Tracks{tt}(:,20) = -Tracks{tt}(:,20); % reflect about x
         Tracks{tt}(:,21) = -Tracks{tt}(:,21); % reflect about y. needed because we want to clockwise polar plot.
         
@@ -267,7 +286,11 @@ for ii = 1:length(Cells)
         Tracks{tt}(:,23) = atan2(Tracks{tt}(:,21), Tracks{tt}(:,20)); % [rad] theta
         
         ud.cell.track{tt}.time = Tracks{tt}(:,7) * param.interval; % [s]
-        ud.cell.track{tt}.intensity = Tracks{tt}(:,13) - bg(Tracks{tt}(:,7)+1)';
+        if param.thunderstorm % HACK 220622. don't know why I have to do this. format is different again.
+            ud.cell.track{tt}.intensity = Tracks{tt}(:,12) - bg(Tracks{tt}(:,7))';
+        else
+            ud.cell.track{tt}.intensity = Tracks{tt}(:,13) - bg(Tracks{tt}(:,7)+1)';
+        end
         
         ud.cell.track{tt}.rho = Tracks{tt}(:,22);
         ud.cell.track{tt}.theta = Tracks{tt}(:,23);
@@ -304,11 +327,34 @@ for ii = 1:length(Cells)
         end
         
         
-        % CALCULATE MEAN SQUARED DISPLACEMENTS AND FIT TO DIFFUSION MODEL
-
+        % CALCULATE JUMP DISTANCES FOR EACH Dt (both 1D and 2D)
+        
+        % 1D case
+        
+        [RS1, RS2] = meshgrid(Tracks{tt}(:,24), Tracks{tt}(:,24)); % [nm] grid of arc lengths
+        
+        JD_1D = abs(RS2-RS1) ./ 1000; % [um] jump distances along circumference (1D)
+        JD_1D = triu(JD_1D); % [um] upper triangular part of matrix
+        JD_1D = spdiags(JD_1D); % [um] rearrange off-diagonals into columns (each column now a different Dt)
+        JD_1D(JD_1D==0) = nan; % [um] remove zeros
+        
+        ud.cell.track{tt}.jump_distances_1D = JD_1D;
+        
+        % 2D case
+        
         [RX1, RX2] = meshgrid(Rxy(:,1),Rxy(:,1));
         [RY1, RY2] = meshgrid(Rxy(:,2),Rxy(:,2));
         
+        JD_2D = sqrt((RX2-RX1).^2 + (RY2-RY1).^2); % [um] jump distances
+        JD_2D = triu(JD_2D); % [um] upper triangular part of matrix
+        JD_2D = spdiags(JD_2D); % [um] rearrange off-diagonals into columns (each column now a different Dt)
+        JD_2D(JD_2D==0) = nan; % [um] remove zeros
+        
+        ud.cell.track{tt}.jump_distances_2D = JD_2D;
+
+        
+        % CALCULATE MEAN SQUARED DISPLACEMENTS AND FIT TO DIFFUSION MODEL
+
         SD = (RX2-RX1).^2 + (RY2-RY1).^2; % [um^2] squared displacements
         SD = triu(SD); % [um^2] upper triangular part of matrix
         SD = spdiags(SD); % [um^2] rearrange off-diagonals into columns
@@ -318,30 +364,67 @@ for ii = 1:length(Cells)
         Dt = param.interval:param.interval:length(MSD)*param.interval; % [s] time delays
         n_MSD = sum(~isnan(SD)); % number of MSDs for each time delay
         
-        % Choose diffusion model
-        if strcmp(param.diffusion_model, 'brownian') % anomalous diffusion model (fit to D and alpha)
-%             eqn_diff = @(a,b,x) a*x.^b; % a(1) = 2n*D, a(2) = alpha, where n is dimensionality
-            eqn_diff = @(a,x) a(1) + log(x).*a(2); % log version. a(1) = log(2n*D), a(2) = alpha, where n is dimensionality
-%             eqn_fit = fittype(@(a,b,x)eqn_diff(a,b,x));
-            init_diff = [-11 1];
-        else % diffusion + directional motion model (fit to D and v)
-%             eqn_diff = @(a,b,x) a*x + b*x.^2; % a(1) = 2n*D, a(2) = V, where n is dimensionality
-            eqn_diff = @(a,x) log(a(1)*x + (a(2)*x).^2); % log version. a(1) = 2n*D, a(2) = V, where n is dimensionality
-%             eqn_fit = fittype(@(a,b,x)eqn_diff(a,b,x));
-            init_diff = [1e-5 1];
-        end
-        
         fit_ind = min([param.msd_fit_range(2) length(Dt)]);
-        Dt_fit = Dt(1:fit_ind);
-        MSD_fit = MSD(1:fit_ind);
+        Dt_cut = Dt(1:fit_ind);
+        MSD_cut = MSD(1:fit_ind);
         n_MSD_fit = n_MSD(1:fit_ind);
         
-        lb = [0 0];
-        ub = [Inf Inf];
-        options = optimoptions('lsqcurvefit', 'Display', 'off');
+        % Choose diffusion model
+        if strcmp(param.diffusion_model, 'brownian') % anomalous diffusion model (fit to D and alpha)
+            if strcmp(param.msd_fit, 'loglog')
+                eqn_diff = @(a,x) a(1) + x.*a(2); % log version. a(1) = log(2n*D), a(2) = alpha, where n is dimensionality
+                Dt_fit = log(Dt_cut); % for fitting, use log of Dt
+                MSD_fit = log(MSD_cut); % for fitting, use log of MSD
+                init_diff = [-11 1];
+                Dt_plot = log(Dt); % for plotting the model, use log of Dt
+            else
+                eqn_diff = @(a,x) a(1)*x.^a(2); % a(1) = 2n*D, a(2) = alpha, where n is dimensionality
+                Dt_fit = Dt_cut; % for fitting, use log of Dt
+                MSD_fit = MSD_cut; % for fitting, use log of MSD
+                init_diff = [1e-3 1];
+                Dt_plot = Dt; % for plotting the model
+            end
+                %             eqn_diff = @(a,x) a(1) + log(x).*a(2); % log version. a(1) = log(2n*D), a(2) = alpha, where n is dimensionality
+            
+%             eqn_fit = fittype(@(a,b,x)eqn_diff(a,b,x));
+            
+%             init_diff = [-11 1];
+%             lb = [-Inf 0];
+%             ub = [Inf Inf];
+%             options = optimoptions('lsqcurvefit', 'Display', 'off');
+%             [fitvals, ~, res, ~, ~, ~, J] = lsqcurvefit(eqn_diff, init_diff, Dt_fit, MSD_fit, lb, ub, options);
+            [fitvals, res, J] = nlinfit(Dt_fit, MSD_fit, eqn_diff, init_diff);
+            ci = nlparci(fitvals, res, 'jacobian', J);
+            t = tinv(1-0.05/2, length(MSD_fit)-length(fitvals));
+            fiterrs = (ci(:,2)-ci(:,1)) ./ (2*t);
+        else % diffusion + directional motion model (fit to D and v)
+            if strcmp(param.msd_fit, 'loglog') % actually in this case it's semilog
+                eqn_diff = @(a,x) log(a(1)*x + (a(2)*x).^2); % log version. a(1) = 2n*D, a(2) = V, where n is dimensionality
+                MSD_fit = log(MSD_cut); % for fitting, use log of MSD
+                init_diff = [0.05 0.01];
+            else % linear fit
+                eqn_diff = @(a,x) a(1)*x + a(2)*x.^2; % a(1) = 2n*D, a(2) = V, where n is dimensionality
+                MSD_fit = MSD_cut;
+                init_diff = [1e-3 0.01];
+            end
+%             eqn_fit = fittype(@(a,b,x)eqn_diff(a,b,x));
+            
+            Dt_fit = Dt_cut; % for fitting, use regular Dt (not log)
+
+%             lb = [0 0];
+%             ub = [Inf Inf];
+%             options = optimoptions('lsqcurvefit', 'Display', 'off');
+%             fitvals = lsqcurvefit(eqn_diff, init_diff, Dt_fit, MSD_fit, lb, ub, options);
+            [fitvals, res, J] = nlinfit(Dt_fit, MSD_fit, eqn_diff, init_diff);
+            ci = nlparci(fitvals, res, 'jacobian', J);
+            t = tinv(1-0.05/2, length(MSD_fit)-length(fitvals));
+            fiterrs = (ci(:,2)-ci(:,1)) ./ (2*t);
+            
+            Dt_plot = Dt; % fot plotting the model, use regular Dt (not log)
+        end
+
 %         [fitvals, gof] = fit(Dt_fit', MSD_fit', eqn_diff, 'Weights', n_MSD_fit, 'StartPoint', init_diff);
-        [fitvals, ~, ~] = nlinfit(Dt_fit, log(MSD_fit), eqn_diff, init_diff, 'Weights', n_MSD_fit);
-%         fitvals = lsqcurvefit(eqn_diff, init_diff, log(Dt_fit), log(MSD_fit), lb, ub, options);
+%         [fitvals, ~, ~] = nlinfit(Dt_fit, log(MSD_fit), eqn_diff, init_diff, 'Weights', n_MSD_fit);
 
         sse = sum((log(MSD)-eqn_diff(fitvals,log(Dt))).^2); % residual sum of squares
         sst = sum((log(MSD)-mean(log(MSD))).^2); % total sum of squares
@@ -353,9 +436,8 @@ for ii = 1:length(Cells)
         
         ud.cell.track{tt}.diffusion_eqn = eqn_diff;
         ud.cell.track{tt}.msd_fits = fitvals; % [D alpha] or [D v], depending on which model you chose
-
-%         Velocities = [Velocities; fit_vel(2)];
-
+        ud.cell.track{tt}.msd_errs = fiterrs; % [D alpha] or [D v], depending on which model you choose
+        
         
         % PLOT TRACKS, MSD, AND TRAJECTORIES
         
@@ -365,13 +447,13 @@ for ii = 1:length(Cells)
         ud.cell.track{tt}.isplotted = 1;
         
         % plot MSD
-        %     plot(p_msd, log(Dt), log(MSD), 'ok')
         ud.phandles.p_msd(tt) = plot(ud.axes.ax_msd, Dt, MSD, '.', 'Color', track_clr, 'DisplayName', ['Track ' num2str(tt)]);
-%         ud.phandles.p_msd_fit(tt) = plot(ud.axes.ax_msd, Dt, eqn_vel(fit_vel,Dt), 'Color', track_clr, 'DisplayName', ['Track ' num2str(tt)]);
-        ud.phandles.p_msd(tt) = plot(ud.axes.ax_msd, Dt, exp(eqn_diff(fitvals,Dt)), 'Color', track_clr, 'DisplayName', ['Track ' num2str(tt)]);
+        if strcmp(param.msd_fit, 'loglog')
+            ud.phandles.p_msd(tt) = plot(ud.axes.ax_msd, Dt, exp(eqn_diff(fitvals,Dt_plot)), 'Color', track_clr, 'DisplayName', ['Track ' num2str(tt)]);
+        else
+            ud.phandles.p_msd(tt) = plot(ud.axes.ax_msd, Dt, eqn_diff(fitvals,Dt_plot), 'Color', track_clr, 'DisplayName', ['Track ' num2str(tt)]);
+        end
 %         ud.phandles.p_msd(tt) = plot(ud.axes.ax_msd, Dt, eqn_diff(fitvals.a, fitvals.b, Dt), 'Color', track_clr, 'DisplayName', ['Track ' num2str(tt)]);
-        %     plot(p_msd, Dt, MSDpll, 'ob')
-        %     plot(p_msd, Dt, eqn1D(fitpll,Dt), 'g')
         
         % plot in polar coordinates
         ud.phandles.p_rho(tt) = plot(ud.axes.ax_rho, Tracks{tt}(:,7)*param.interval, Tracks{tt}(:,22), 'DisplayName', ['Track ' num2str(tt)]); % rho
@@ -392,7 +474,7 @@ for ii = 1:length(Cells)
     ud.axes.ax_msd.YScale = 'log';
     ud.axes.ax_rho.YLim = [0 max(maxrho)*1.1];
     ud.axes.ax_dist.YLim = [-pi*radius*pix2um*1000 pi*radius*pix2um*1000];
-    ud.axes.ax_dist.XLim = [0 300];
+    ud.axes.ax_dist.XLim = [0 10];
     ud.axes.ax_int.YLim = [0 max(maxint)*1.1];
     linkaxes([ud.axes.ax_rho ud.axes.ax_dist ud.axes.ax_int],'x')
     

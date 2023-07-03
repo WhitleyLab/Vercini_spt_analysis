@@ -14,6 +14,9 @@ elseif evnt.Character == 'a' % run AutoStepFinder on trajectory
 elseif evnt.Character == 'b' % run AutoStepFinder on all trajectories (batch version)
     find_steps_spt_batch;
     
+elseif evnt.Character == 'd' % run Diffusion Velocity MLE analysis on track
+    find_changept_diff_vel;
+    
 elseif evnt.Character == 't' %add set of t points (for uvrd 2B fret analysis)
     pts = add_spt_t_points;
     

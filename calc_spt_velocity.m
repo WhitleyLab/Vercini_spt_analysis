@@ -2,6 +2,8 @@ function calc_spt_velocity
 %click two points and calculate the unwinding velocity between the points
 %120626 mjc
 
+% adapted by kw in 2022 for single-particle tracking.
+
 ud = get(gcf,'UserData');
 
 %get two t points
@@ -74,15 +76,36 @@ end
 % text(ud.axes.ax_dist, t1, txty, {[num2str(v_endpoints,'%0.1f') ' nm/s'] [num2str(v_fit,'%0.1f') ' nm/s (fit)']}, 'tag', 'vel', 'color', 'b')
 text(ud.axes.ax_dist, t1, txty, [num2str(v_fit,'%0.1f') ' nm/s (fit)'], 'tag', 'vel', 'color', 'b')
 
+% get residual and chi-squared
+fitline = x*v_fit + f.p2; % fitted line
+residuals = y - fitline; % [nm]
+chi2 = sum(residuals.^2 ./ fitline); % [nm]
+
 %add fit data to list saved to figure
 
 %check if list exists (only one could exist)
-if ~isfield(ud.cell.track{ind_minr},'speeds')
-    ud.cell.track{ind_minr}.speeds = [];
+% if ~isfield(ud.cell.track{ind_minr},'speeds')
+%     ud.cell.track{ind_minr}.speeds = [];
+% end
+
+if ~isfield(ud.cell.track{ind_minr},'segment')
+    ud.cell.track{ind_minr}.segment = [];
 end
 
-allv_res = [d1 d2 t1 t2 v_fit];
-ud.cell.track{ind_minr}.speeds = [ud.cell.track{ind_minr}.speeds; allv_res];
+segsize = size(ud.cell.track{ind_minr}.segment,2);
+
+% add a new segment to the track field
+ud.cell.track{ind_minr}.segment{segsize+1}.pos1 = d1;
+ud.cell.track{ind_minr}.segment{segsize+1}.pos2 = d2;
+ud.cell.track{ind_minr}.segment{segsize+1}.t1 = t1;
+ud.cell.track{ind_minr}.segment{segsize+1}.t2 = t2;
+ud.cell.track{ind_minr}.segment{segsize+1}.velocity = v_fit;
+ud.cell.track{ind_minr}.segment{segsize+1}.fitline = fitline;
+ud.cell.track{ind_minr}.segment{segsize+1}.residuals = residuals;
+ud.cell.track{ind_minr}.segment{segsize+1}.chi2 = chi2;
+
+% allv_res = [d1 d2 t1 t2 v_fit];
+% ud.cell.track{ind_minr}.speeds = [ud.cell.track{ind_minr}.speeds; allv_res];
 
 set(gcf,'userData',ud)
 

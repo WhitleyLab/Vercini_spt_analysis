@@ -95,6 +95,17 @@ for tt = 1:length(ud.phandles.p_polar)
         end
     end
     
+    % Recalculate 1D jump distances
+    
+    [RS1, RS2] = meshgrid(newdist, newdist); % [nm] grid of arc lengths
+    
+    JD_1D = abs(RS2-RS1) ./ 1000; % [um] jump distances along circumference (1D)
+    JD_1D = triu(JD_1D); % [um] upper triangular part of matrix
+    JD_1D = spdiags(JD_1D); % [um] rearrange off-diagonals into columns (each column now a different Dt)
+    JD_1D(JD_1D==0) = nan; % [um] remove zeros
+    
+    ud.cell.track{tt}.jump_distances_1D = JD_1D;
+    
     ud.phandles.p_rho(tt) = plot(ud.axes.ax_rho, time, r2);
     ud.phandles.p_dist(tt) = plot(ud.axes.ax_dist, time, newdist);
     

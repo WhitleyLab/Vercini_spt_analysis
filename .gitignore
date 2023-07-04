@@ -3,15 +3,4 @@
 *.asv
 *~
 *.mex*
-old/
-autostepfind_nogui.m
-config_last_run.mat
-find_changept_diff_vel.m
-find_steps_spt.m
-find_steps_spt_batch.m
-get_JDs.m
-multikey_analysis_v2.m
-plot_2B_speeds_and_Z_speeds.mlx
-plot_2B_speeds_constriction.mlx
-plot_lifetimes.mlx
-verciniSPT_v2.m
+config_last_run

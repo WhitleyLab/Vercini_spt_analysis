@@ -3,7 +3,6 @@
 *.asv
 *~
 *.mex*
-old
 autostepfind_nogui.m
 config_last_run.mat
 find_changept_diff_vel.m

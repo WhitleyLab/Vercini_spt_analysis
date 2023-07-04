@@ -3,3 +3,4 @@
 *.asv
 *~
 *.mex*
+autostepfind_nogui.m

@@ -3,4 +3,4 @@
 *.asv
 *~
 *.mex*
-config_last_run
+config_last_run.mat

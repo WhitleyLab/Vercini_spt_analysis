@@ -1,7 +1,55 @@
+% Author: Kevin Whitley
+% 
+% This function plots single-particle tracking data for vertically-trapped
+% bacterial cells. It takes a video file (.tif format), an associated
+% tracking data file (.csv format), and an associated data file with the
+% coordinates of cells to be analyzed (.csv format). It then plots the
+% tracks in polar coordinates, measures and fits the MSDs, and plots the
+% time traces in polar coordinates. The figure is then interactive, with
+% several options for further analysis.
+% 
+% FILE FORMATS:
+%   Video file: Should be in .tif format
+%   Track data file: Contains output of TrackMate data, in .csv format
+%   Cell coordinate file: Contains coordinates of the bounding boxes of cells chosen manually in ImageJ, in .csv format
+% 
+% INPUTS:
+%   fileFilter: Search string for files to analyze (e.g. '*.tif')
+%   interval: Acquisition interval [s]
+%   pixSz: Camera pixel size [nm/px]
+%   varargin: Optional inputs:
+%       'PlotFOV', true/false (default:false): Plot the Field of View with all tracks and bounding boxes.
+%       'PsfFWHM', (default:250): FWHM of the point-spred function [nm].
+%       'TimeRange', (default:[10 Inf]): Time range to use for filtering tracks (only tracks in this range will be used for subsequent analysis [frames].
+%       'DistThresh', (default:0): Threshold for how far a track needs to go (end-to-end) to be included [um]. Only tracks with end-to-end distance greater than this will be used in subsequent analysis.
+%       'PairDistThresh', (default:2): Threshold for how far a track center can be from a septum center [um]. Only tracks within this distance from the calculated center of a track will be used in subsequent analysis.
+%       'DiffusionModel', ('brownian', 'directional') (default:'brownian'): Which model to use for fits to MSD vs. timestep plots. 'brownian' uses the anomalous diffusion model MSD = 4Dt^alpha, while 'directional' uses MSD = 4Dt + (vt)^2.
+%       'MSDfit', ('linear', 'loglog') (default:'loglog'): Fit MSD vs. timestep plots on linear scale or on log-log scale.
+%       'MSDfitrange', (default:[0 15]): Time range to use for fitting MSD vs. timestep plots [s].
+%       'RsquaredThresh', (default:-Inf): Threshold for R^2 for MSD vs. timestep plots. Only tracks with R^2 greater than this will be used in subsequent analysis.
+% 
+% OUTPUTS:
+%   A figure file with:
+%       An image of the cell being analyzed with fits to a ring.
+%       A plot of all tracks analyzed in polar coordinates.
+%       A plot of MSDs vs. timestep with fits for each track.
+%       A time trace of coordinate rho (distance from center) for each track.
+%       A time trace of arc length (position around circumference) for each track.
+%       A time trace of intensity for each track.
+%   Figures have saved within them all parameters used for analysis and results for any fits (e.g. MSD fits) as the figure's UserData.
+% 
+%   Figures are interactive. They can be further analyzed by the user by pressing specific keys and clicking points on the figure:
+%       Press 'c' and click on polar plot to reset the center position of the cell. (often fits to rings doesn't quite get the center right, so can shift it manually this way). Both original and new center coordinates are added to the figure's UserData.
+%       Press 't' and click on any of the time traces to plot a vertical dotted line. This will appear in all three time traces so you can see if any events happened at the same point in time. Time points are added to the figure's UserData.
+%       Press 'm' and click any two points in the time traces to measure the mean value of the coordinate between those time points.
+%       Press 'v' and click on any two points in the arc length trace to fit a line across those time points and calculate velocity. Velocities and associated fit results are added to the figure's UserData.
+%       Press 's' to save the figure with all associated UserData.
+%       Press 'x' to exit the interactive mode.
 
-function verciniSPT(param)
 
-if nargin == 0
+function verciniSPT_v2(fileFilter, interval, pixSz, varargin)
+
+if nargin == 0 % debug mode
     param.Date = '220316';
     param.file = '1';
     param.analysisDate = datestr(now,'yymmdd');
@@ -14,53 +62,89 @@ if nargin == 0
     param.pixSz = 65; % [nm/pix]
     param.interval = 1; % [s]
     param.psfFWHM = 250; % [nm]
-    param.derivative_threshold = 1000 / param.interval;
     param.fixedRadius = 1; % use fixed radius (otherwise use instantaneous 'radius')
     param.thunderstorm = 0; % used thunderSTORM for localizations and tracking (tracking csv file in um for regular TrackMate, nm for tSTORM+TrackMate)
-    
+
+    % filters
+    param.time_range = [10 Inf]; % [frames] threshold for how long a track needs to last
+    param.distance_threshold = 0; % [um] threshold for end-to-end distance a track needs to go
+    param.pairing_distance_threshold = 2; % [um] threshold for how far a track center can be from a septum center
     param.diffusion_model = 'brownian'; % brownian or directional
     param.msd_fit = 'loglog'; % use loglog fit or linear fit?
     param.msd_fit_range = [0 15]; % range of time-steps to fit for MSD data
+    param.R2_threshold = -Inf; % threshold for R^2 (for fit of log(MSD) to log(t))
+
 else
-    if isempty(param.directory)
-        path = uigetdir;
-    else
-        path = param.directory;
-    end
-    if nargin < 4
-        param.derivative_threshold = 40;
-    end
-    if nargin < 3
-        param.pixSz = 65; % [nm/pix]
-    end
+    %     Zim_file = uigetfile('*.ome.tif', 'FtsZ image file', [path '\']);
+    [im_file, im_path] = uigetfile(fileFilter, 'Pbp2B stack');
+    [tracks_file, tracks_path] = uigetfile('*.csv', 'Track file', [im_path '\']);
+    [septa_file, septa_path] = uigetfile('*.ome.roi.zip.csv', 'Septa file', [im_path '\']);
     
-%     Zim_file = uigetfile('*.ome.tif', 'FtsZ image file', [path '\']);
-    im_file = uigetfile('*.ome.tif', 'Pbp2B stack', [path '\']);
-    tracks_file = uigetfile('*.csv', 'Track file', [path '\']);
-    septa_file = uigetfile('*.ome.roi.zip.csv', 'Septa file', [path '\']);
+    param.directory = im_path;
+    param.Date = im_file(1:6); % assumes first 6 digits are date
+    param.file = im_file(8); % assumes 8th character is file
     
-    Zim = imreadstack([path '\' Zim_file]);
-    im = imreadstack([path '\' im_file]);
-    tracks = xlsread([path '\' tracks_file]);
-    cells = xlsread([path '\' septa_file]);
+    %     Zim = imreadstack([path '\' Zim_file]);
+    im = imreadstack([im_path im_file]);
+    tracks = xlsread([tracks_path tracks_file]);
+    cells = xlsread([septa_path septa_file]);
+
+    param.interval = interval; % [s]
+    param.pixSz = pixSz; % [nm/pix]
+
+    % defaults. Can be overridden by user.
+    plot_fov = 0;
+    param.fixedRadius = 1; % use fixed radius (otherwise use instantaneous 'radius')
+    param.thunderstorm = 0; % used thunderSTORM for localizations and tracking (tracking csv file in um for regular TrackMate, nm for tSTORM+TrackMate)
+    param.psfFWHM = 250; % [nm]
+    param.time_range = [10 Inf]; % [frames] threshold for how long a track needs to last
+    param.distance_threshold = 0.00; % [um] threshold for end-to-end distance a track needs to go
+    param.pairing_distance_threshold = 2; % [um] threshold for how far a track center can be from a septum center
+    param.diffusion_model = 'brownian'; % brownian or directional
+    param.msd_fit = 'loglog'; % use loglog fit or linear fit?
+    param.msd_fit_range = [0 15]; % range of time-steps to fit for MSD data
+    param.R2_threshold = -Inf; % threshold for R^2 (for fit of log(MSD) to log(t))
+    
+    ii = 1;
+    while ii<=numel(varargin)
+        if strcmp(varargin{ii},'PlotFOV')
+            plot_fov = 1;
+            ii=ii+1;
+        elseif strcmp(varargin{ii},'Thunderstorm')
+            param.thunderstorm = 1;
+            ii=ii+1;
+        elseif strcmp(varargin{ii},'PsfFWHM')
+            param.psfFWHM=varargin{ii+1};
+            ii=ii+2;
+        elseif strcmp(varargin{ii},'TimeRange')
+            param.time_range=varargin{ii+1};
+            ii=ii+2;
+        elseif strcmp(varargin{ii},'DistThresh')
+            param.distance_threshold=varargin{ii+1};
+            ii=ii+2;
+        elseif strcmp(varargin{ii},'PairDistThresh')
+            param.pairing_distance_threshold=varargin{ii+1};
+            ii=ii+2;
+        elseif strcmp(varargin{ii},'DiffusionModel')
+            param.diffusion_model=varargin{ii+1};
+            ii=ii+2;
+        elseif strcmp(varargin{ii},'MSDfit')
+            param.msd_fit=varargin{ii+1};
+            ii=ii+2;
+        elseif strcmp(varargin{ii},'MSDfitRange')
+            param.msd_fit_range=varargin{ii+1};
+            ii=ii+2;
+        elseif strcmp(varargin{ii},'RsquaredThresh')
+            param.R2_threshold=varargin{ii+1};
+            ii=ii+2;
+        else
+            ii=ii+1;
+        end
+    end
+
 end
 
-% USER INPUTS
-
-plot_fov = 0; % plot the field of view with tracks and septa
-plot_vel_msd = 0; % plot a histogram of velocities obtaines from MSD analysis
-
 pix2um = param.pixSz/1000; % [um/pix]
-
-% filters
-param.time_range = [10 Inf]; % [frames] threshold for how long a track needs to last
-param.pairing_distance_threshold = 2; % [um] threshold for how far a track center can be from a septum center
-param.distance_threshold = 0.05; % [um] threshold for end-to-end distance a track needs to go
-param.R2_threshold = 0.95; % threshold for R^2 (for fit of log(MSD) to log(t))
-
-% no filters
-param.distance_threshold = 0.00; % [um] threshold for end-to-end distance a track needs to go
-param.R2_threshold = -Inf; % threshold for R^2 (for fit of log(MSD) to log(t))
 
 % if (x,y) coordinates in track file were in nm, convert to um
 if param.thunderstorm
@@ -71,31 +155,21 @@ end
 % sort rows (times sometimes are scrambled)
 tracks = sortrows(tracks,[2 7]);
 
-% Start plots
-
+% Start FoV plot
 if plot_fov
     figure
     ax_xy = gca;
     hold on
     ylabel('y (\mum)')
     xlabel('x (\mum)')
-    set(ax_xy,"YDir","reverse")
+    set(ax_xy, 'YDir', 'reverse')
     xlim([0 66.56])
     ylim([0 66.56])
     axis equal
 end
 
-if plot_vel_msd
-    figure
-    ax_vel_msd = gca;
-    hold on
-    ylabel('Counts')
-    xlabel('Speed from MSD fit (nm/s)')
-end
-
 % make cell array of septal (i.e. cell) coordinates
 
-% septa(:,3:4) = septa(:,3:4).*pix2um; % [um] septal coordinates
 cells = sortrows(cells, [1 2]); % rearrange so first x coordinate is always lowest, second is highest
 
 Cells = {}; cc1 = 1;
@@ -103,9 +177,7 @@ for cc = 1:4:length(cells) % data are by fours, so increment by 4
 
     Cells{cc1}(:,1) = [cells(cc,3); cells(cc+1,3)];
     Cells{cc1}(:,2) = [cells(cc+1,4); cells(cc+2,4)];
-    
-%     plot(p_xy, Septa{ss1}(:,1), Septa{ss1}(:,2))
-    
+
     cc1 = cc1+1;
 end
 
@@ -113,21 +185,20 @@ end
 
 tracknums = unique(tracks(:,2));
 
-Velocities=[]; dr=[]; subim=zeros(60,60); subim_2b=zeros(60,60,size(im,3));
+dr=[]; subim=zeros(60,60); subim_2b=zeros(60,60,size(im,3));
 for ii = 1:length(Cells)
     
     ud.cell.cellnum = ii;
     
-    % start plot for this cell
+    % SET UP FIGURE FOR THIS CELL
+    
     ud.figsavename = [param.directory param.Date '_' param.file '_cell' num2str(ii) '_diffuse'];
     fig_tracks = figure('Position',[850, 130, 770, 800], 'FileName', ud.figsavename);
-%     ud.axes.ax_im = subplot(3,4,1);
     ud.axes.ax_im = subplot(4,4,1);
     set(ud.axes.ax_im,"YDir","reverse")
     hold on
     axis equal
     
-%     ud.axes.ax_polar = subplot(3,3,2,polaraxes);
     ud.axes.ax_polar = subplot(4,3,2,polaraxes);
     hold on
     filename_plot = replace([param.Date '_' param.file], '_', '\_');
@@ -135,18 +206,15 @@ for ii = 1:length(Cells)
     ud.axes.ax_polar.ThetaDir = 'clockwise';
     ud.axes.ax_polar.ThetaTick = 0:90:360;
     
-%     ud.axes.ax_msd = subplot(3,3,3);
     ud.axes.ax_msd = subplot(4,3,3);
     hold on
     ylabel('MSD (\mum^2)')
     xlabel('\Deltat (s)')
     set(ud.axes.ax_msd,'YAxisLocation','right')
-    
-%     ud.axes.ax_rho = subplot(3,3,4:6);
+
     ud.axes.ax_rho = subplot(4,3,4:6);
     hold on
     ylabel('\rho (nm)')
-%     ud.axes.ax_dist = subplot(3,3,7:9);
     ud.axes.ax_dist = subplot(4,3,7:9);
     hold on
     ylabel('Arc length (nm)')
@@ -156,7 +224,7 @@ for ii = 1:length(Cells)
     ylabel('Intensity')
     xlabel('Time (s)')
     
-    % FIND COORDINATES FOR CENTER OF RING USING Z-RING IMAGE
+    % FIND COORDINATES FOR CENTER OF RING
     
     % create bounding box (need to cut if near border)
     box_x1 = max([Cells{ii}(1,1), 1]); % [pix]
@@ -169,19 +237,18 @@ for ii = 1:length(Cells)
     ud.cell.boxsize = [xdim ydim];
     
     % get individual ring bounded by the box at index ind_box
-    subim(1:ydim+1,1:xdim+1,1:size(im,3)) = im(box_y1:box_y2, box_x1:box_x2, :); % need to flip x and y
-%     subim(1:ydim+1,1:xdim+1,1) = Zim(box_y1:box_y2, box_x1:box_x2, 1);
+    subim(1:ydim+1,1:xdim+1,1:size(im,3)) = im(box_y1:box_y2, box_x1:box_x2, :); % use HT-PBP2B image to find ring. need to flip x and y
+%     subim(1:ydim+1,1:xdim+1,1) = Zim(box_y1:box_y2, box_x1:box_x2, 1); % use GFP-FtsZ image to find ring
     
     % fit individual ring to model, get center position
     %ringIm = mean(subim,3);
     ringImMax = max(subim,[],3);
     fitRingArg = {'FixedPositionFit', true};
     try
-        [fitParAvg, ~, im_bg_sub] = fitRing_public(ringImMax, pix2um*1000, param.psfFWHM, fitRingArg{:});
+        [fitParAvg, ~, im_bg_sub] = fitRing(ringImMax, param.pixSz, param.psfFWHM, fitRingArg{:});
     catch
         continue
     end
-%     [fitParAvg, ~, im_bg_sub] = fitRing_public(subim, pix2um*1000, param.psfFWHM, fitRingArg{:});
     cent = fitParAvg(:,1:2); % [pix]
     radius = fitParAvg(:,3); % [pix]
     implot = imagesc(ud.axes.ax_im, im_bg_sub);
@@ -224,7 +291,7 @@ for ii = 1:length(Cells)
     imBlur = imgaussfilt(subim_2b,1);
     bgval=[]; otsuThresh=[];
     for kk = 1:size(im,3)
-       otsuThresh(:,:,kk) = otsu_public(imBlur(:,:,ii));
+        otsuThresh(:,:,kk) = otsu(imBlur(:,:,ii));
         oneframe = subim_2b(:,:,kk);
         bgval(kk) = median(oneframe(otsuThresh(:,:,kk)==1));
     end
@@ -241,7 +308,7 @@ for ii = 1:length(Cells)
     % GO THROUGH EACH TRACK
 
     % go through each track for this cell
-    Tracks={}; maxrho=[]; ud.phandles.p_polar=[]; ud.phandles.p_rho=[]; ud.phandles.p_dist=[]; ud.phandles.p_msd=[]; ud.phandles.p_msd_fit=[]; ud.cell.track={}; JD_all=[];
+    Tracks={}; maxrho=[]; ud.phandles.p_polar=[]; ud.phandles.p_rho=[]; ud.phandles.p_dist=[]; ud.phandles.p_msd=[]; ud.phandles.p_msd_fit=[]; ud.cell.track={};
     for tt = 1:length(tracknum_paired)
         
         ud.cell.track{tt}.trackind = tt;
@@ -298,7 +365,7 @@ for ii = 1:length(Cells)
         ud.cell.track{tt}.theta_new = Tracks{tt}(:,23); % duplicate in case you shift it later
         
         if param.fixedRadius
-            Tracks{tt}(:,24) = Tracks{tt}(:,23) .* radius*pix2um*1000; % [nm] angular position, fixed R
+            Tracks{tt}(:,24) = Tracks{tt}(:,23) .* radius*param.pixSz; % [nm] angular position, fixed R
         else
             Tracks{tt}(:,24) = Tracks{tt}(:,23) .* Tracks{tt}(:,22); % [nm] angular position, instantaneous R
         end
@@ -306,6 +373,7 @@ for ii = 1:length(Cells)
         Tracks{tt}(:,23) = Tracks{tt}(:,23) * 180/pi; % [deg]
         
         % patch up boundary conditions
+        param.derivative_threshold = 1000 / param.interval; % set threshold based on interval
         dxdt = (Tracks{tt}(2:end,24)-Tracks{tt}(1:end-1,24)) / param.interval; % first derivative
         ind_plus = find(dxdt>=param.derivative_threshold);
         ind_minus = find(dxdt<=-param.derivative_threshold);
@@ -327,7 +395,7 @@ for ii = 1:length(Cells)
         end
         
         
-        % CALCULATE JUMP DISTANCES FOR EACH Dt (both 1D and 2D)
+        % CALCULATE JUMP DISTANCES FOR EACH TIMESTEP (both 1D and 2D)
         
         % 1D case
         
@@ -384,15 +452,7 @@ for ii = 1:length(Cells)
                 init_diff = [1e-3 1];
                 Dt_plot = Dt; % for plotting the model
             end
-                %             eqn_diff = @(a,x) a(1) + log(x).*a(2); % log version. a(1) = log(2n*D), a(2) = alpha, where n is dimensionality
-            
-%             eqn_fit = fittype(@(a,b,x)eqn_diff(a,b,x));
-            
-%             init_diff = [-11 1];
-%             lb = [-Inf 0];
-%             ub = [Inf Inf];
-%             options = optimoptions('lsqcurvefit', 'Display', 'off');
-%             [fitvals, ~, res, ~, ~, ~, J] = lsqcurvefit(eqn_diff, init_diff, Dt_fit, MSD_fit, lb, ub, options);
+
             [fitvals, res, J] = nlinfit(Dt_fit, MSD_fit, eqn_diff, init_diff);
             ci = nlparci(fitvals, res, 'jacobian', J);
             t = tinv(1-0.05/2, length(MSD_fit)-length(fitvals));
@@ -407,14 +467,9 @@ for ii = 1:length(Cells)
                 MSD_fit = MSD_cut;
                 init_diff = [1e-3 0.01];
             end
-%             eqn_fit = fittype(@(a,b,x)eqn_diff(a,b,x));
-            
+
             Dt_fit = Dt_cut; % for fitting, use regular Dt (not log)
 
-%             lb = [0 0];
-%             ub = [Inf Inf];
-%             options = optimoptions('lsqcurvefit', 'Display', 'off');
-%             fitvals = lsqcurvefit(eqn_diff, init_diff, Dt_fit, MSD_fit, lb, ub, options);
             [fitvals, res, J] = nlinfit(Dt_fit, MSD_fit, eqn_diff, init_diff);
             ci = nlparci(fitvals, res, 'jacobian', J);
             t = tinv(1-0.05/2, length(MSD_fit)-length(fitvals));
@@ -422,9 +477,6 @@ for ii = 1:length(Cells)
             
             Dt_plot = Dt; % fot plotting the model, use regular Dt (not log)
         end
-
-%         [fitvals, gof] = fit(Dt_fit', MSD_fit', eqn_diff, 'Weights', n_MSD_fit, 'StartPoint', init_diff);
-%         [fitvals, ~, ~] = nlinfit(Dt_fit, log(MSD_fit), eqn_diff, init_diff, 'Weights', n_MSD_fit);
 
         sse = sum((log(MSD)-eqn_diff(fitvals,log(Dt))).^2); % residual sum of squares
         sst = sum((log(MSD)-mean(log(MSD))).^2); % total sum of squares
@@ -439,7 +491,7 @@ for ii = 1:length(Cells)
         ud.cell.track{tt}.msd_errs = fiterrs; % [D alpha] or [D v], depending on which model you choose
         
         
-        % PLOT TRACKS, MSD, AND TRAJECTORIES
+        % PLOT EACH TRACK IN POLAR COORDINATES, AS TIME-TRACE, AND ALSO MSD
         
         % make polar plot
         ud.phandles.p_polar(tt) = polarplot(ud.axes.ax_polar, Tracks{tt}(:,23)*pi/180, Tracks{tt}(:,22), 'DisplayName', ['Track ' num2str(tt)]);
@@ -453,8 +505,7 @@ for ii = 1:length(Cells)
         else
             ud.phandles.p_msd(tt) = plot(ud.axes.ax_msd, Dt, eqn_diff(fitvals,Dt_plot), 'Color', track_clr, 'DisplayName', ['Track ' num2str(tt)]);
         end
-%         ud.phandles.p_msd(tt) = plot(ud.axes.ax_msd, Dt, eqn_diff(fitvals.a, fitvals.b, Dt), 'Color', track_clr, 'DisplayName', ['Track ' num2str(tt)]);
-        
+
         % plot in polar coordinates
         ud.phandles.p_rho(tt) = plot(ud.axes.ax_rho, Tracks{tt}(:,7)*param.interval, Tracks{tt}(:,22), 'DisplayName', ['Track ' num2str(tt)]); % rho
         maxrho(tt) = max(Tracks{tt}(:,22));
@@ -481,10 +532,7 @@ for ii = 1:length(Cells)
     ud.param = param;
     fig_tracks.UserData = ud;
     
-    set(fig_tracks,'WindowKeyPressFcn',@multikey_analysis)
+    set(fig_tracks,'WindowKeyPressFcn',@multikey_analysis_v1)
 
 end
 
-if plot_vel_msd
-    histogram(ax_vel_msd, Velocities.*1000, 0:2:60)
-end

@@ -31,14 +31,7 @@ elseif evnt.Character == 's' %save figure
     
 elseif evnt.Character == 'v' %calculate velocity between two clicked points
     calc_spt_velocity;
-    
-elseif evnt.Character == 'z' %zoom and replot
-    set(gcf,'userdata',ud);
-    zoominplot
-    
-elseif evnt.Character == 'q' % Cut trap interval and replot
-    trap_intervals;
-    
+
 elseif evnt.Character == 'x' % leave this function
     set(gcf,'keypressfcn',[])    
     

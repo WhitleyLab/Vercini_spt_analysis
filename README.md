@@ -46,3 +46,5 @@ If you use this software in work leading to a scientifc publication, please cite
 
 A one-track model for spatiotemporal coordination of Bacillus subtilis septal cell wall synthesis.
 Kevin D. Whitley, James Grimshaw, David M. Roberts, Eleni Karinou, Phillip Stansfeld, Séamus Holden. bioRxiv (2023): https://doi.org/10.1101/2023.06.29.547024 
+
+<a href="https://zenodo.org/doi/10.5281/zenodo.10671687"><img src="https://zenodo.org/badge/467203662.svg" alt="DOI"></a>

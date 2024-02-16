@@ -14,7 +14,7 @@ OVERVIEW
 6. spt_tirf_trackmate_off_axis_batch2.m: A MATLAB function that measures the off-axis motion of single-molecule tracks along a defined axis, using all files in a directory.
 7. plot_spt_tirf_trackmate_off_axis2.m: A MATLAB function that plots the off-axis motion (sum of residuals to a linear fit) of single-molecule tracks, using output from spt_tirf_trackmate_off_axis.m or spt_tirf_trackmate_off_axis_batch2.m.
 
-8. verciniSPT_v1.m: A MATLAB function that plots various things for single-particle tracking data in vertical cells. It plots tracks in polar coordinates, time traces in polar coordinates, and mean-squared displacements iwth fits. The output is an interactive figure, with several options for futher analysis.
+8. verciniSPT_v1.m: A MATLAB function that plots various things for single-particle tracking data in vertical cells. It plots tracks in polar coordinates, time traces in polar coordinates, and mean-squared displacements with fits. The output is an interactive figure, with several options for futher analysis.
 
 SYSTEM REQUIREMENTS
 

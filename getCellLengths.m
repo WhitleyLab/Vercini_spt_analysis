@@ -21,7 +21,7 @@
 function all_lengths = getCellLengths(path, plotdat)
 
 if nargin == 0
-    path = uigetdir('\\campus\rdw\FMS CBCB\nkw81\');
+    path = uigetdir('\\campus\rdw\WhitleyLab\Data\KWhitley');
     plotdat = 1;
 end
 
@@ -51,7 +51,11 @@ for cc = 1:ncsv
         [pks,locs,w,p] = findpeaks(linepro);
         pkmat = [pks locs dat(locs,ii) w p];
         pkmat = sortrows(pkmat, 5, 'descend');
-        leng(ii) = abs(pkmat(2,3) - pkmat(1,3)); % cell length
+        if length(pks) > 1
+            leng(ii) = abs(pkmat(2,3) - pkmat(1,3)); % cell length
+        else
+            continue
+        end
         
         if plotdat
             cla
